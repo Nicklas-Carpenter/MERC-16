@@ -1,0 +1,1121 @@
+\documentclass[12pt, a4paper]{report}
+\usepackage{listings}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{longtable}
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{setspace}
+\usepackage{multirow}
+
+\hypersetup{
+	colorlinks,
+	citecolor=black,
+	filecolor=black,
+	linkcolor=black,
+	urlcolor=black
+}
+
+\author{Nicklas Carpenter, Jake Evans, Craig McGee Jr., Angel Rivera}
+\date{Published: \today}
+\title{MERC-16 Architecture	Manual}
+
+\setlength{\LTleft}{0pt}
+
+\newenvironment{changemargin}[2]{%
+	\begin{list}{}{%
+			\setlength{\topsep}{0pt}%
+			\setlength{\leftmargin}{#1}%
+			\setlength{\rightmargin}{#2}%
+			\setlength{\listparindent}{\parindent}%
+			\setlength{\itemindent}{\parindent}%
+			\setlength{\parsep}{\parskip}%
+		}%
+		\item[]}{\end{list}}
+
+\lstdefinelanguage[MERC16]{Assembler}{
+	morekeywords={add,addi,bgt,bget,beq,blt,blet,bne,call,comp,
+				  j,jr,load,lui,not,nop,sll,srl,store,sub},
+	otherkeywords={$}, %$
+	alsoletter=$, %$
+ 	sensitive=false,
+ 	morecomment=[l]\#
+}[keywords,comments]
+
+\lstset{
+	language=C,
+	commentstyle=\color{red!40!black},
+	basicstyle=\ttfamily,
+	keywordstyle=\bfseries\color{green!40!black},
+	identifierstyle=\color{blue},
+	stringstyle=\color{orange},
+	tabsize=4
+}
+
+\begin{document}
+	\maketitle
+	
+	\tableofcontents
+	\newpage
+	
+	\begin{center}
+		\section*{Executive Summary}
+		Hello, and welcome to our design document!  In this document you will learn both the ins and outs of our MERC-16 processor.  The MERC-16 processor is a load/store, multicycle, 16-bit processor.  There are a total of 22 instructions with 4 different instruction types (J-Type, R-Type, I-Type, L-Type) and 16 registers total.  The MERC-16 can perform arithmetic, comparison, jump, and memory operations. 
+	\end{center}
+	
+	
+	
+	\chapter{System Description}
+	\newpage
+	\section{Multi-Cycle RTL}
+	
+	Refer to \textbf{rtl.xlsx} in Design Directory
+	
+	\section{Components}
+	
+	\begin{minipage}[c]{\textwidth}
+			{\renewcommand{\arraystretch}{1.5}
+				\begin{tabular}[c]{c|p{2cm}|p{2.5cm}|p{5.5cm}}
+					Component & Inputs & Output & Description \\
+					\hline
+					ALU & A(16-bits), B(16-bits), Op(3-bit) & Out(16-bits) & This component is used for the main processing functions done for what is written in code. It included two 16-bit inputs and one 16-bit output. There are individual 1-bit control signals for each of the inputs and a 3-bit operation control signal for the ALU itself so that it can do said operation. Note that the operation control is not the same as the opcode found in the machine code \\
+					\hline
+					Register & Din(16-bit), En(1-bit) & Dout(16-bit) & Component that stores values. Writing to the register can only occur
+					when En is acitve\\
+					\hline
+					Sign Extender & In(4-bits) & SE(16-bit) & Takes a 4-bit two's complement integer and returns a 16-bit equivalent with the
+					sign of the integer preserved\\
+					\hline
+					Zero Extender & In(4-bits) & ZE(16-bit) & Takes a 4-bit two's complement integer and returns a 16-bit equivalent with the
+					sign upper 12 bits set to 0\\
+					\hline
+					Left-Shifter & In(16-bit) & LS(16-bit) & Takes a 16-bit binary number and preforms a logical left shift (the most-significant) bit is discarded, each bit is shifted left, and the least-significant bit is set to 0)\\
+				\end{tabular}
+			}
+	\end{minipage}
+
+	\section{Subsystems}
+	\begin{minipage}[c]{\textwidth}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[t]{c|p{11cm}}
+				Subsystem & Description \\
+				\hline
+				Register File & Composed of registers and combinational logic to handle addressing, input output handling, and control
+				handling  \\
+				Memory & Composed of a block memory unit and combinational logic to handle input output and control handling \\
+				Decode Subsystem & Composed of the Register file, and the combinational logic for register and immediate output
+				(including sign and zero extension as well as left-shifting). 
+			\end{tabular}
+		}\\\\\\
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[t]{c|p{4cm}|p{4cm}| p{3cm}}
+				Subsystem & Inputs & Outputs & Controls \\
+				\hline
+				Register File & WriteAddr(16-bit), ReadAddrA(16-bit), ReadAddrB(16-bit), WriteData(16-bit) & RegOutA(16-bit), RegOutB(16-bit) & Dest(1-bit), Write(1-bit) \\
+				\hline
+				Memory & ReadAddr(16 bit) & MemOut(16-bit) & Read(1-bit), Write(1-bit), ToReg(1-bit), WR\_Data(1-bit) \\
+				\hline
+				Decode Subsystem & Instr(16-bit), WR\_Data(16-bit) & A(16-bit), B(16-bit), ZE(16-bit), SE(16-bit), SE1L(16-bit) & 
+				WR\_EN(1-bit), Short\_rs(1-bit)
+			\end{tabular}
+		}
+	\end{minipage}
+
+	\section{Controls}
+		\subsection{State Machine}
+		Refer to \textbf{control.png} in Design Directory
+		\pagebreak
+		\subsection{Signals List}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{longtable}[c]{c|p{11cm}}
+				Control Signal & \multicolumn{1}{c}{Description} \\
+				\hline
+				Inst/Data & This control signal is used to tell the multiplexer whether we want to go to our instruction memory or whether we want to go to our data memory to do things like write or read in memory \\
+				\hline
+				ALUOp & This control signal is used to tell the ALU what operation we are doing.  Such operations include, add, subtract, shift instructions, and logical instructions \\
+				\hline
+				ALUSrcA & This control signal is used to determine whether we want the ALU to take whatever value from the register that we read into A or take the PC to do an operation in the ALU \\
+				\hline
+				ALUSrcB & This control signal is used to determine whether we want the ALU to take whatever value from the register that we read into B, take the number 2 for incrementing purposes, or the sign/zero extended immediate for other operations  \\
+				\hline
+				RegData & This control signal is used to determine whether we are taking whatever ALUOut is as the data to write into the register, or we take the data from memory as our write data, or the value of the PC, or the value for lui and llli operations to write into the register \\
+				\hline
+				RegDest & This control signal is used to determine which register we want to write data to if we have enabled writing to a register \\
+				\hline
+				IRWrite & This control signal is used to enable or disable writing to the instruction register \\
+				\hline
+				RegShort & This control signal is used to determine whether we are taking the 4 bit rs value or the shortened 3 bit rs value \\
+				PCSrc & This control signal is used to determine whether we are taking the ALUOut value for jump target, the branch value to set PC equal to it, or the next instruction address  \\
+				\hline
+				PCWrite & This control signal is within the control of the PC and is used to enable or disable writing to the PC \\
+				\hline
+				MemWrite & This control signal is used to enable or disable writing to memory \\
+				\hline
+				MemRead & This control signal is used to enable or disable reading from memory \\
+				\hline
+				RegWrite & This control signal is used to enable or disable writing to a register \\
+				\hline
+				ZE/SE & This control signal is used to determine whether we want the sign extended immediate or the zero extended immediate \\
+				\hline
+				Upper/Lower & This control signal is used to pick between picking the computation for our lui instruction or our lli instruction \\
+				\hline
+				Beq & This control signal is within the control of the PC and is used to enable or disable the writing to the PC the value from the beq instruction \\
+				\hline
+				Bne & This control signal is within the control of the PC and is used to enable or disable the writing to the PC the value from the bne instruction \\
+				\hline
+				Blt & This control signal is within the control of the PC and is used to enable or disable the writing to the PC the value from the blt instruction \\
+				\hline
+				Bgt & This control signal is within the control of the PC and is used to enable or disable the writing to the PC the value from the bgt instruction \\
+				\hline
+				Blet & This control signal is within the control of the PC and is used to enable or disable the writing to the PC the value from the blet instruction\\
+				Bget & This control signal is within the control of the PC and is used to enable or disable the writing to the PC the value from the bget instruction
+		\end{longtable}}
+		\pagebreak
+	
+	\section{Datapath}
+	Refer to \textbf{datapath.png} in Design Directory
+	
+	\chapter{Instruction Set Reference}
+	
+	\section{Instruction Format}
+	\subsection{I-Type}
+	This type is using a register and immediate value and store the result into another register. rs is the register being used in 
+	conjunction with the immediate value, and rd is the destination register where the result is store when doing the instructions 
+	specified in the opcode.
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} opcode & rd & rs & imm \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{4}
+			\end{tabular}}
+	\end{center}
+
+	\subsection{R-Type}
+	This type is using two registers and storing the result from doing the instructions specified in the opcode into a separate register. 
+	rs and rt are the two registers that are being used in the initial process; however, 
+	rt deals with only the first 8 out of the 16 possible registers due to the smaller bit size the type can handle. 
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				R & \vline \hspace{1.5pt} opcode & rd & rs & rt \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{4} & \multicolumn{1}{c}{3}
+			\end{tabular}}
+	\end{center}
+
+	\subsection{J-Type}
+	This type allows us to jump to a specific address in the code.
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c |}
+				\cline{2-3}
+				J & \vline \hspace{1.5pt} opcode & psuedo-address \\
+				\cline{2-3}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{11}
+			\end{tabular}}
+	\end{center}
+
+	\subsection{L-Type}
+	Used to load half word immediates into registers.
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-4}
+				L & \vline \hspace{1.5pt} opcode & rd & imm. \\
+				\cline{2-4}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{3} &
+				\multicolumn{1}{c}{8}
+			\end{tabular}}
+	\end{center}
+	
+	\section{Addressing Modes}
+	\subsection{Register Direct}
+	Used in all instructions. The value passed to rd, rd, or rt is the address of the specified register in the register file.
+	
+	\subsection{Psuedodirect}
+	Used in jumping instructions. The 16-bit value written to the PC is composed as follows:
+	
+	{\renewcommand{\arraystretch}{1.5}
+		\begin{tabular}[b]{c @{ } c | c |}
+			\cline{2-3}
+			Jump Address:  & \vline \hspace{1.5pt} PC[15:11] & SE(imm) $<< 1$ \\
+			\cline{2-3}
+			\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{11}
+		\end{tabular}}
+	
+	\subsection{PC Relative}
+	Used in all branching instructions. The sign-extended value of the immediate is added to the value of the PC and then, if the
+	branch is take, the result is written to the PC.
+	
+	\subsection{Base + Offset}
+	Used in memory instructions. The address in memory that is written to or read from is the address specified in the operand register
+	added with the offset specified in the immediate.
+	
+	\section{Register Definitions}
+	{\renewcommand{\arraystretch}{1.5}
+		\begin{tabular}[c]{c|c| p{8cm}}
+			Address & Register Name & Description \\
+			\hline
+			0 & zero & This register is always set to 0, or connected to ground, and cannot be changed to any other value. \\
+			\hline
+			1 & sp & This register is called the stack pointer, which is used to adding/removing stacks in order to insert certain values/registers into said stacks \\
+			\hline
+			2-4 & t0, t1 t2 & These are temporary registers which are not carried through the call, so only use these for brief use in the code \\
+			\hline
+			5 & ra & This register is used to return to a specific address in the code, which can be overridden when jumping from procedure to procedure \\
+			\hline
+			6-8 & s0, s1, s2 & These are saved registers which are carried through the call, but they can be overridden \\
+			\hline
+			9-10 & rv0, rv1 & These registers are used to store return values in a call; they are carried over after a call has been executed \\
+			\hline
+			11-12 & arg0, arg1 & These registers are used to store argument values before entering a call; they are carried over into the call but can also be overridden within the call \\
+			\hline
+			13 & at & This register is saved for the assembler and are reserved for handling pseudo-instructions \\
+			\hline
+			14-15 & k0, k1 & This register is saved for the kernel and should not be used by the program
+		\end{tabular}
+	}
+
+	\section{Instruction List}
+	\lstMakeShortInline[language={[MERC16]Assembler}]z
+	
+	\subsection{Add (add)}
+	\subsubsection{Description}
+	Adds values of two registers and stores in a register.
+	\subsubsection{Syntax}
+	zadd	$rd, $rs, $rtz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				R & \vline \hspace{1.5pt} 0b00000 & rd & rs & rt \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{4} & \multicolumn{1}{c}{3}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC + 2 \\
+	PC = newPC \\
+	IR = Mem[PC] \\
+	A = Reg[IR[6-3]] \\
+	B = Reg[IR[2-0]] \\
+	Result = A + B \\
+	Reg[IR[10-7]] = result \\
+	
+	\subsection{Add Immediate (addi)}
+	\subsubsection{Description}
+	Adds value from a register and an intermediate value and stores in a register.
+	\subsubsection{Syntax}
+	zaddi     $rd, $rs, nz
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b00001 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{4}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC + 2 \\
+	PC = newPC \\
+	IR = Mem[PC] \\
+	A = Reg[IR[6-3]] \\
+	B = SE(IR[3:0]) \\
+	Result = A + B \\
+	Reg[IR[10-7]] = Result \\
+	
+	\subsection{AND (and)}
+	\subsubsection{Description}
+	Bitwise AND between 2 registers and stores result in a register.
+	\subsubsection{Syntax}
+	zand    $rd, $rs, $rtz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				R & \vline \hspace{1.5pt} 0b01100 & rd & rs & rt \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{4} & \multicolumn{1}{c}{3}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC+2 \\
+	PC = newPC \\
+	IR = Mem[PC] \\
+	a = Reg[IR[6-3]] \\
+	b = Reg[IR[2-0]] \\
+	result = a \& b \\
+	Reg[IR[10-7]] = result \\
+	
+	
+	
+	\subsection{Branch if Equal To (beq)}
+	\subsubsection{Description}
+	Branches the specified number of instructions if the compared values are equal.
+	\subsubsection{Syntax}
+	zbeq    $rd, $rs, 5tz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b00101 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{4}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	Reg[IR[10:7]] \\
+	B = Reg[IR[6:4]] \\
+	If (A  ==  B) \\
+	PC = newPC + SE(IR[0:3]) \\
+	Else \\
+	PC = NextPC \\
+	
+	\subsection{Branch if Greater Than (bgt)}
+	\subsubsection{Description}
+	Branches the specified number of instructions if the value of the first operand is greater than the second.
+	\subsubsection{Syntax}
+	zbge    $rd, $rs, 5tz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b10011 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{4}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	Reg[IR[10:7]] \\
+	B = Reg[IR[6:4]] \\
+	If (A  >  B) \\
+	PC = newPC + SE(IR[0:3]) \\
+	Else \\
+	PC = NextPC \\
+	
+	\subsection{Branch if Greater Than or Equal To (bget)}
+	\subsubsection{Description}
+	Branches the specified number of instructions if the value of the first operand is greater than or equal to the second.
+	\subsubsection{Syntax}
+	zbget    $rd, $rs, 5tz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b10101 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{4}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	Reg[IR[10:7]] \\
+	B = Reg[IR[6:4]] \\
+	If (A  >=  B) \\
+	PC = newPC + SE(IR[0:3]) \\
+	Else \\
+	PC = NextPC \\
+	
+	\subsection{Branch if Less Than (blt)}
+	\subsubsection{Description}
+	Branches the specified number of instructions if the value of the first operand is less than the second.
+	\subsubsection{Syntax}
+	zble    $rd, $rs, 5tz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b10010 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{4}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	Reg[IR[10:7]] \\
+	B = Reg[IR[6:4]] \\
+	If (A  <  B) \\
+	PC = newPC + SE(IR[0:3]) \\
+	Else \\
+	PC = NextPC \\
+	
+	\subsection{Branch if Less Than or Equal To (blet)}
+	\subsubsection{Description}
+	Branches the specified number of instructions if the value of the first operand is less than the second.
+	\subsubsection{Syntax}
+	zblet   $rd, $rs, 5tz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b10010 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{3}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	Reg[IR[10:7]] \\
+	B = Reg[IR[6:4]] \\
+	If (A  <=  B) \\
+	PC = newPC + SE(IR[0:3]) \\
+	Else \\
+	PC = NextPC \\
+	
+	\subsection{Branch if Not Equal To (bne)}
+	\subsubsection{Description}
+	Branches the specified number of instructions if the compared values are equal.
+	\subsubsection{Syntax}
+	zbne    $rd, $rs, 5tz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b10010 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{4}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	Reg[IR[10:7]] \\
+	B = Reg[IR[6:4]] \\
+	If (A  !=  B) \\
+	PC = newPC + SE(IR[0:3]) \\
+	Else \\
+	PC = NextPC \\
+	
+	\subsection{Call (call)}
+	\subsubsection{Description}
+	BJumps from current address to the address calculated and stores return address in register \$5
+	\subsubsection{Syntax}
+	zcall    destinationz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c |}
+				\cline{2-3}
+				J & \vline \hspace{1.5pt} 0b00100 & destination \\
+				\cline{2-3}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{11}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	Reg[IR[10:7]] \\
+	B = Reg[IR[6:4]] \\
+	If (A  ==  B) \\
+	PC = newPC + SE(IR[0:3]) \\
+	Else \\
+	PC = NextPC \\
+	
+	\subsection{Compare (comp)}
+	\subsubsection{Description}
+	Adds values of two registers and stores in a register.
+	\subsubsection{Syntax}
+	zcomp	$rd, $rs, $rtz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				R & \vline \hspace{1.5pt} 0b01111 & rd & rs & rt \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{4} & \multicolumn{1}{c}{3}
+		\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC+2 \\ 
+	PC = newPC \\
+	IR = Mem[PC] \\
+	a = Reg[IR[6-3]] \\
+	b = Reg[IR[2-0]] \\
+	if (a == b) result = 0 \\
+	else if (a < b) result = -1 \\
+	else result = 1 \\
+	Reg[IR[10-7]] = result \\
+	
+	
+	\subsection{Jump (j)}
+	\subsubsection{Description}
+	Jumps from current address to the address calculated.
+	\subsubsection{Syntax}
+	zj	destinationz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c |}
+				\cline{2-3}
+				J & \vline \hspace{1.5pt} 00011 & destination \\
+				\cline{2-3}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{11}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC + 2 \\
+	IR = Mem[PC] \\
+	result = PC[15-11] + SE(IR[10-0]) << 1 \\
+	PC = result \\
+	
+	\subsection{Jump Register (jr)}
+	\subsubsection{Description}
+	Jumps from current address to the address calculated.
+	\subsubsection{Syntax}
+	zj	$rsz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				R & \vline \hspace{1.5pt} 0b10110 & xxxx & rs & xxxx \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{4} & \multicolumn{1}{c}{3}
+		\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC + 2 \\
+	IR = Mem[PC] \\
+	a = Reg[IRr[10-0]] \\
+	result = a \\
+	PC = result \\
+	Reg[IR[10-7]] = result \\
+	
+	\subsection{Load Word (load)}
+	\subsubsection{Description}
+	Loads word from address in memory and stores in a register
+	\subsubsection{Syntax}
+	zlw    $rd, $rs, immz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b00111 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{4}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	A = Reg[IR[10-7]] \\
+	B= Reg[IR[6-4]] \\
+	R = A + SE(IR[3-0]) \\
+	Mout = M[R] \\
+	Reg[B] = Mout \\
+	
+	\subsection{Load Lower Immediate (lli)}
+	\subsubsection{Description}
+	Loads the eight bit immediate into the lower eight bits of the specified register.
+	\subsubsection{Syntax}
+	zlui    $rd , immz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-4}
+				L & \vline \hspace{1.5pt} 0b01000 & rd & imm. \\
+				\cline{2-4}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{3} &
+				\multicolumn{1}{c}{8}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	D = IR[10-8] \\
+	R[D][7:0] = IR[7-0] \\
+	
+	\subsection{Load Upper Immediate (lui)}
+	\subsubsection{Description}
+	Loads an eight bit immediate into the upper eight bits of the specified register.
+	\subsubsection{Syntax}
+	zlui    $rd, immnz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-4}
+				L & \vline \hspace{1.5pt} 0b01001 & rd & imm. \\
+				\cline{2-4}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{3} &
+				\multicolumn{1}{c}{8}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	D = IR[10-8] \\
+	R[D][15:8] = IR[7-0] \\
+	
+	\subsection{No Operation (nop)}
+	\subsubsection{Description}
+	An instruction that has no effect on when executed.
+	\subsubsection{Syntax}
+	znopz%$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				& \vline \hspace{1.5pt} 0b01110 & rd & rs & rt \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{4} & \multicolumn{1}{c}{3}
+		\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	PC = NewPC \\
+	
+	\subsection{NOT (not)}
+	\subsubsection{Description}
+	Inverts the bits of the source register and stores the result in the destination register.
+	\subsubsection{Syntax}
+	znopz%$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				R & \vline \hspace{1.5pt} 0b01101 & rd & rs & xxx \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{4} & \multicolumn{1}{c}{}
+		\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	NextPC = PC + 2 \\
+	IR = M[PC] \\
+	PC = NewPC \\
+
+	\subsection{OR (or)}
+	\subsubsection{Description}
+	Bitwise OR between 2 registers and stores result in a destination register.
+	\subsubsection{Syntax}
+	zor    $rd, $rs, $rtz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				R & \vline \hspace{1.5pt} 0b01011 & rd & rs & xxx \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{4} & \multicolumn{1}{c}{}
+		\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC + 2 \\
+	IR = M[PC] \\
+	A = Reg[IR[6-3]] \\
+	B = Reg[IR[2-0]] \\
+	D = Reg[10-7] \\
+	Reg[D] = A $|$ B \\
+	
+	\subsection{Shift Left Logical (sll)}
+	\subsubsection{Description}
+	Shifts a register value left by the amount provided in the immediate and places the result into the destination register.
+	\subsubsection{Syntax}
+	zsll    $rd, $rs, 2z %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b10000 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{4}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC+2 \\
+	PC = newPC \\
+	IR = Mem[PC] \\
+	a = Reg[IR[6-4]] \\
+	shamt = ZE[IR[3-0]] \\
+	result = a << shamt \\
+	Reg[IR[10-7]] = result \\
+	
+	\subsection{Shift Right Logical (srl)}
+	\subsubsection{Description}
+	Shifts a register value right by the amount provided in the immediate and places the result into the destination register.
+	\subsubsection{Syntax}
+	zsll    $rd, $rs, immz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b10001 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{4}
+		\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC+2 \\
+	PC = newPC \\
+	IR = Mem[PC] \\
+	a = Reg[IR[6-4]] \\
+	shamt = ZE[IR[3-0]] \\
+	result = a >> shamt \\
+	Reg[IR[10-7]] = result \\
+	
+	\subsection{Store Word (store)}
+	\subsubsection{Description}
+	Stores value of the source register into an address in memory.
+	\subsubsection{Syntax}
+	zstore    $rd, $rs, imm.z %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				I & \vline \hspace{1.5pt} 0b01010 & rd & rs & imm. \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{3} & \multicolumn{1}{c}{3}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC + 2 \\
+	IR = M[PC] \\
+	A = Reg[IR[10-7]] \\
+	B = Reg[IR[6-4]] \\
+	R = A + SE(IR[3-0]) \\
+	Mem[R]  = B \\ 
+	
+	
+	\subsection{Subtract (sub)}
+	\subsubsection{Description}
+	Subtracts value of a register from value of an other register and stores in a register.
+	\subsubsection{Syntax}
+	zsub    $rd, $rs, $rtz %$
+	\subsubsection{Format}
+	\begin{center}
+		{\renewcommand{\arraystretch}{1.5}
+			\begin{tabular}[b]{c @{ } c | c | c | c|}
+				\cline{2-5}
+				R & \vline \hspace{1.5pt} 0b00010 & rd & rs & rt \\
+				\cline{2-5}
+				\multicolumn{1}{}{} & \multicolumn{1}{c}{5} & \multicolumn{1}{c}{4}
+				& \multicolumn{1}{c}{4} & \multicolumn{1}{c}{3}
+			\end{tabular}}
+	\end{center}
+	\subsubsection{RTL}
+	newPC = PC + 2 \\
+	PC = newPC \\
+	IR = Mem[PC] \\
+	A = Reg[IR[6-3]] \\
+	B = Reg[IR[2-0]] \\
+	result = A - B \\
+	Reg[IR[10-7]] = result \\
+	
+	
+	\chapter{Sample Code}
+	
+	\newpage
+	
+	\section{Common Code Constructs}
+	
+	\subsection{If Statement}
+	
+	\subsubsection{C Code}
+	
+	\begin{lstlisting}
+if (a == b) {
+	a += 1;
+	
+}
+else {
+	a -= 1
+}
+	\end{lstlisting}
+	
+	\subsubsection{Equivalent MERC-16 Assembly}
+	\begin{flushleft}
+		\begin{tabular}[b]{l @{\hspace{8pt}} l @{} l  c @{}}
+			Address & Label & Assembly & Machine Code \\
+			\hline
+			\texttt{0x0000} & & zbne $t0, $t1, ELSEz & \texttt{0x0905} \\
+			\texttt{0x0002} & & zaddi $t0, $0, 1z & \texttt{0x2908} \\ %$
+			\texttt{0x0004} & & zj DONEz & \texttt{0x092F} \\
+			& \texttt{else:} \\
+			\texttt{0x0006} & & zaddi $t0, $t0, -1z & \texttt{0x1802} \\
+			& \texttt{done:} \\
+		\end{tabular}
+	\end{flushleft}
+	
+	\subsection{While Statement}
+	
+	\subsubsection{C Code}
+	
+	\begin{lstlisting}
+int i = 5;
+while(i != 0) {
+	i--;
+}
+	\end{lstlisting}
+	
+	\subsubsection{Equivalent MERC-16 Assembly}
+	\begin{flushleft}
+		\begin{tabular}[b]{l @{\hspace{8pt}} l @{} l  c @{}}
+			Address & Label & Assembly & Machine Code \\
+			\hline
+			\texttt{0x0000} & & zaddi $t0, $0, 5z & \texttt{0x0905} \\
+			& \texttt{while:} \\
+			\texttt{0x0002} & & zbeq $t0, $0, DONEz & \texttt{0x2908} \\ %$
+			\texttt{0x0004} & & zaddi $t0, $t0, -1z & \texttt{0x092F} \\
+			\texttt{0x0006} & & zj WHILEz & \texttt{0x1802} \\
+			& \texttt{done:} \\
+		\end{tabular}
+	\end{flushleft}
+
+	\subsection{For Statement}
+	
+	\subsubsection{C Code}
+	
+	\begin{lstlisting}
+int length = 5;
+for (int i = 0) {
+}
+	\end{lstlisting}
+	
+	\subsubsection{Equivalent MERC-16 Assembly}
+	\begin{flushleft}
+		\begin{tabular}[b]{l @{\hspace{8pt}} l @{} l  c @{}}
+			Address & Label & Assembly & Machine Code \\
+			\hline
+			\texttt{0x0000} & & zaddi $t1, $0, 5z & \texttt{0x0905} \\
+			\texttt{0x0002} & & zadd $t0, $0, $0z & \texttt{0x2908} \\ %$
+			& \texttt{for:} \\
+			\texttt{0x0004} & & zbeq $t0, $t1, DONEz & \texttt{0x092F} \\
+			\texttt{0x0006} & & zaddi $t0, $t0, 1z & \texttt{0x092F} \\
+			\texttt{0x0008} & & zj FORz & \texttt{0x1804} \\
+			& \texttt{done:} \\
+		\end{tabular}
+	\end{flushleft}
+	
+	\newpage
+	\subsection{Euclid's Alogrithm}
+	\subsubsection{C Code}
+	\begin{lstlisting}
+// Find m that is relatively prime to n.
+int relPrime(int n) {
+	int m;
+	m = 2;
+		
+	// n is the input from the outside world
+	while (gcd(n, m) != 1) {  
+		m = m + 1;
+	}
+		
+	return m;
+}
+		
+
+		
+// The following method determines the Greatest 
+// Common Divisor of a and b using Euclid's 
+// algorithm.
+int gcd(int a, int b){
+	if (a == 0) {
+		return b;
+	}
+		
+	while (b != 0) {
+		if (a > b) {
+			a = a - b;
+		} 
+		else {
+			b = b - a;
+		}
+	}
+		
+	return a;
+}
+	\end{lstlisting}
+	
+	
+	\newpage
+	\subsubsection{Equivalent MERC-16 Assembly}
+	\begin{changemargin}{-2cm}{-2cm}
+				\begin{tabular}[c]{l @{\hspace{8pt}} l @{\hspace{8pt}} l  c @{\hspace{8pt}} p{5cm}}
+					Address & Label & Assembly & Machine Code  & Comment\\
+					\hline
+					& \texttt{relprime:} \\
+					\texttt{0x0000} & & zaddi $t0, $0, 2z & \texttt{0x0902} & z#t0 is mz \\
+					& \texttt{while1:} \\
+					\texttt{0x0002} & &  zadd $arg1, $t0, $0z & \texttt{0x0610} &  z# Set m as argument 0z \\ %$
+					\texttt{0x0004} & & zaddi $sp, $sp, -4z & \texttt{0x089C} & z# Allocate spacez z# on the stackz \\
+					\texttt{0x0006} & & zstore $sp, $t0, 0z & \texttt{0x48A0} & z# Store m on the stackz \\
+					\texttt{0x0008} & & zstore $sp, $ra, 2z & \texttt{0x48D2} & z# Store return addressz \\
+					\texttt{0x000A} & & zcall gcdz & \texttt{0x200F} & z# Call gcd functionz \\
+					\texttt{0x000C} & & zaddi $t1, $0, 1z & \texttt{0x0981} & z# Branch to return ifz z# return value is 1z \\
+					\texttt{0x000E} & & zbeq $rv0, $t1, 6z & \texttt{0x2CB6} & z# Branch to return1 ifz z# return value is 1z \\
+					\texttt{0x0010} & & zload $t0, $sp, 0z & \texttt{0x3910} & z# Loading m into t0 z \\
+					\texttt{0x0012} & & zadd $t0, $t0, $t1z & \texttt{0x0113} & z# Increment m by 1z \\ %$
+					\texttt{0x0014} & & zj while1z & \texttt{0x1801} & z# Jump to while1z\\
+					\texttt{0x0016} & & zadd $rv0, $t0, $0z & \texttt{0x0490}  & z# Store result in returnz z# value registerz \\ %$
+					& \texttt{return1:} \\
+					\texttt{0x0018} & & zload $ra, $sp, 2z & \texttt{0x3A92} & z# Restore the originalz z# return addressz \\
+					\texttt{0x001A} & & zaddi, $sp, $sp, 4z & \texttt{0x0894} & z# Restore the stackz \\
+					\texttt{0x001C} & & zjr $raz & \texttt{0xA805} & z# Returnz \\ %$
+					& \texttt{gcd:} \\
+					\texttt{0x001E} & & zbne $arg0, $0, 2z & \texttt{0x3582} & z# Set return value to bz \\
+					\texttt{0x0020} & & zadd $rv0, $arg1, $0z & \texttt{0x04D8} & z# Set return value to bz \\ %$
+					\texttt{0x0022} & & zjr $raz & \texttt{0xA805} & z# Returnz \\ %$
+					& \texttt{while2:} \\
+					\texttt{0x0024} & & zadd $t1, $arg0, $0z & \texttt{0x01D8} & z# Puts a into register t1z \\ %$
+					\texttt{0x0026} & & zadd $t2, $arg1, $0z & \texttt{0x0260} & z# Puts b into register t2z \\ %$
+					\texttt{0x0028} & & zbeq $t2, $0, 5z & \texttt{0x2805} & z# Branch to return2 if b = 0z \\
+					\texttt{0x002A} & & zblet $t1, $t2, 2z & \texttt{0x99C2} & z# Branch to else if a <= 0z \\
+					\texttt{0x002C} & & zsub $t1, $t1, $t2z & \texttt{0x119C} & z# Set a to a - bz \\ %$
+					\texttt{0x002E} & & zj while 2z & \texttt{0x1812} & z# Jump to while2z \\
+					\texttt{0x0030} & & zsub $t2, $t2, $t1z &  \texttt{0x1223} & z# Set b to b - az \\ %$
+					\texttt{0x0032} & & zj while 2z & \texttt{0x1812} & z# Jump to while2z \\
+					& \texttt{return2:} \\
+					\texttt{0x0034} & & zadd $rv0, $t1, $0z & \texttt{0x0498} & z# Set return value to az \\ %$
+					\texttt{0x0036} & & zjr $raz & \texttt{0xA805} & z# Returnz \\ %$	
+				\end{tabular}
+	\end{changemargin}
+
+	\chapter{Verification}
+	\section{RTL}
+	We put initial values into the RTL and preformed the operations, verifying that our results are what we expect. 
+	Included is the an example of this verification
+	
+	\subsection{addi}
+	zaddi $t0, $0, 5z \\ \\
+	\noindent
+	PC = 0x0008
+	newPC = PC + 2 = 0x000A \\
+	IR = Mem[PC] = Mem[0x000A] = 0x0905 // Machine code of given instruction \\
+	A = Reg[IR[6-4]] = Reg[0] = \$0 = 0 \\
+	B = SE(IR[3-0]) = SE(0101) = 5 \\
+	Result = A + B = 5 \\
+	Reg[IR[10-7]] result = 5 \\\\
+	z$t0 = 5z %$
+	
+	\pagebreak
+	
+	\subsection{lli}
+	zlli $s0, 16z \\\\ %$
+	\noindent
+	PC = 0x0030
+	newPC = PC + 2 = 0x0032 \\
+	IR = Mem[PC] = Mem[0x0032] = 0x4610 // Machine code of given instruction \\
+	D = R[10:8] = s0 \\ %$
+	s0 = 16
+	z$t0 = 5z %$
+	
+	\lstDeleteShortInlinez
+	
+	\section{Components}
+	{\renewcommand{\arraystretch}{1.5}
+		\begin{tabular}[c]{c|p{11cm}}
+			Component & \multicolumn{1}{c}{Testing Plan} \\
+			\hline
+			ALU & In order to comprehensively test this component, we’ll need to have a thorough process in all the control signals. In order to properly do this,
+			we first have the Op control signal to start at zero (000) and the SrcA and ScrB control signals also at zero (0, 0 - respectfully). From there we 
+			increment one of the SrcA/SrcB control signals like and repeat the test. \\
+			\hline
+			Left-Shift Module & We decided to test these components using an exhaustive testing method. What is meant by this is that we insert any value into these components and see if they properly sign extended and/or left shifted said value, and we continuously use different values until it is seen that all of the values were sign extended and/or left shifted \\
+			\hline
+			Sign Extender & We decided to test these components using an exhaustive testing method. What is meant by this is that we insert any value into these components and see if they properly sign extended and/or left shifted said value, and we continuously use different values until it is seen that all of the values were sign extended and/or left shifted
+		\end{tabular}
+	}
+	
+	\pagebreak
+
+	\section{Subsystems}
+	{\renewcommand{\arraystretch}{1.5}
+		\begin{longtable}[c]{c|p{11cm}}
+			Subsystem & \multicolumn{1}{c}{Testing Plan} \\
+			\hline
+			Register File & In order to properly test the register file component, we will need to thoroughly process through two control signals.  In this case, 
+			we will need to start with the control signal Dest at 0 and then the control signal Write at 0.  Then we will need to alternate the bit for Write, with 
+			each cycle incrementing the bit for Dest. \\
+			\hline
+			Memory & In order to properly test the Memory component, we will need to thoroughly process through four control signals.  In this case, we will need to 
+			start the control signals Read, Write, ToReg, and WR\_Data at 0 respectively.  Then we will need to alternate the bit for WR\_Data; with each transition from 
+			1 to 0 in WR\_Data, ToReg must alternate; with each transition from 1 to 0 in ToReg, Write must alternate; with each transition from 1 to 0 in Write, Read must alternate. \\
+			\hline
+			PC Subsystem & In order to properly test this subsystem, we’ll need a 16-bit input that goes into PC\_J (jumping), PC\_Inc (incrementation), and PC\_Br (branching). 
+			We do not need three separate 16-bit inputs since all of these inputs should only deal with the same 16-bit input. The result should also come out as 16-bit as well. 
+			As for the control signals, there are ten 1-bit inputs that are for checking to see if we need to write something onto the PC, branch out based on comparing values, and 
+			seeing if the value is less than/greater than/equal to. In order to test this, we are going to need 210 combinations on each of the 1-bit inputs. \\
+			\hline
+			Decode Subsystem & We test this subsystem by having two 16-bit inputs that are used for the Instruction Register and Register Data. These could either be the same values or different ones depending on what is needed for testing. We also have 2 1-bit control bits that allow for the subsystem to enable writing in the register file and if we’re using the long (4-bit) or short (3-bit) rs register when going through the subsystem. What comes out are four 16-bit outputs, two of which are directly from the register file component (A \& B) and two that are sign extended. One of the two 16-bit sign extended values is also left shifted by 1. We can put in any kind of random value onto the two 16-bit inputs as long as they’re the same size, meanwhile we can have a total amount of 3 combinations for WR\_EN and Short\_Rs when using this subsystem. \\
+		\end{longtable}
+	}
+
+	\pagebreak
+
+	\section{Subsystem Connection}
+	{\renewcommand{\arraystretch}{1.5}
+		\begin{longtable}[c]{p{2cm}|p{12cm}}
+			Stage & \multicolumn{1}{c}{Testing Plan} \\
+			\hline
+			\multirow{2}{\linewidth}{PC Memory} & Connect the PC subsystem to the Memory subsystem. PC Output will connect to ADDR and Data Inputs. Test and verify that the connection works via the PC output comes out as 16-bits and reaches the Memory subsystem inputs with the same 16-bit size. Be sure that the control signals are connected to their respective subsystems\\
+			\hline
+			\multirow{2}{\linewidth}{PC Memory Decode} & Connect the first setup with the decode subsystem by having the decoder follow the Memory subsystem. MemOut will connect to the IR and WR\_Data. Test and verify that the connection works by checking if the MemOut is 16-bit and goes to the inputs at the same size without any manipulation. Be sure that the control signals are connected to their respective subsystems. \\
+			\hline
+			\multirow{2}{\linewidth}{PC Memory Decode ALU Input} & Connect the second setup with the ALU subsystem by having the ALU follow the decode subsystem. Connect the outputs to two multiplexers: first multiplexer is connected to the A output and PC; second multiplexer is connected to the B output, SE1, and SEIL1 outputs. The first multiplexer output will go to the A input of the ALU while the second multiplexer output will go to the B input. Test and verify that the connection works by checking if the output values in the Decode stay at 16-bit when entering the ALU. Be sure that the control signals are connected to their respective subsystems and multiplexers.\\
+			\hline
+			\multirow{2}{\linewidth}{PC Memory Decode ALU} & Connect the outputs of the ALU into the inputs of PC, Memory, and Decode subsystems. ALUOut goes into these inputs via multiplexers (specified in the datapath). Test and verify that the entire system works with the appropriate size values. Be sure that the control signals are connected to their respective subsystems and multiplexers.\\
+		\end{longtable}
+	}
+	\pagebreak
+
+	\section{Control}
+	When the Control Unit obtains the opcode, be sure that it is 5-bit long. From there, we’ll start the process by initializing the all of the control signals, then reading the Opcode. When reaching this step, be sure to convert the opcode to their respective instruction and based on that instruction, make sure that the values needed for changing correspond to the instruction. If the opcode contains more than one instruction, check ahead of the next instruction so that it splits up and goes to ultimately the right instruction. Follow through on each instruction until it hits the end of the process and loops back into initializing the control signals all over again. Do this for all instructions available in the instruction set.
+
+	\section{Complete System}
+	A simple test that we could do would be to start running individual instructions through a datapath. If this is successful, small programs can be tested (which will exponentially be followed by larger programs).
+	In other words, we should first test each instruction to make sure their functions create the expected results.  If the results of a specific instruction does not match the expected result, there are two options to consider when moving forward: change what is faulty in the system, or recalculate the results by hand (perhaps the machine may be right and the human is wrong).
+	If each instruction appears to function they way that they are intended, we must then combine these instructions to create a simple program (e.g. a counter using a for- or while-loop).  If the program gives the results as expected, we can move on to other tests.  If not, we will have to debug the system and see where results may have changed and then go back and review the instruction which caused the unexpected catalyst.
+	Once these small tests have passed, we must then move on to larger programs such as finding the relative prime of a number, finding the factorial of a number, or finding the Fibonacci number of a given number.
+		
+
+	\lstMakeShortInline[language={[MERC16]Assembler}]z
+
+\end{document}
